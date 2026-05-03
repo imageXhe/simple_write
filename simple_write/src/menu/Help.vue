@@ -56,7 +56,7 @@
       <!-- GitHub 链接 -->
       <div class="help-section help-github">
         <a-divider />
-        <a href="https://github.com/your-username/simple-write" target="_blank" class="github-link">
+        <a href="https://github.com/imageXhe/simple_write" target="_blank" class="github-link">
           <GithubOutlined class="github-icon" />
           <span>{{ t('help.githubLink') }}</span>
           <ExportOutlined class="github-external" />

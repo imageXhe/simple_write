@@ -20,7 +20,7 @@
 
 ### GitHub
 
-- [Simple Write on GitHub](https://github.com/your-username/simple-write)
+- [Simple Write on GitHub](https://github.com/imageXhe/simple_write)
 
 ---
 

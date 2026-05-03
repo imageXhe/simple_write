@@ -21,7 +21,7 @@ pub const README_TEMPLATE: &str = r#"# Simple Write
 
 ### GitHub
 
-- [Simple Write on GitHub](https://github.com/your-username/simple-write)
+- [Simple Write on GitHub](https://github.com/imageXhe/simple_write)
 
 ---
 
@@ -41,5 +41,5 @@ pub const README_TEMPLATE: &str = r#"# Simple Write
 
 ### GitHub
 
-- [Simple Write 的 GitHub 页面](https://github.com/your-username/simple-write)
+- [Simple Write 的 GitHub 页面](https://github.com/imageXhe/simple_write)
 "#;
