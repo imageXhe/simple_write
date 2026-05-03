@@ -29,7 +29,7 @@ pub const README_TEMPLATE: &str = r#"# Simple Write
 
 **Simple Write** 是一款仿 Obsidian 开发的 Markdown 笔记软件，基于 Tauri + Vue 3 构建，主要特点是体积小、易安装、易使用。
 
-### 功能特性
+### 功能特性 
 
 - **即装即用**：无需繁琐配置过程，简单地安装和导入仓库。
 - **本地优先**：所有笔记以 Markdown 文件形式存储在本地，无需联网。

@@ -1,3 +1,6 @@
 .claude/CLAUDE.md
 .claude/settings.local.json
 build.log
+simple_write-build.log
+build.ok
+*.log

@@ -53,7 +53,7 @@
         <p class="help-desc">{{ t('help.generateReadmeDesc') }}</p>
       </div>
 
-      <!-- GitHub 链接 -->
+      <!-- GitHub链接 -->
       <div class="help-section help-github">
         <a-divider />
         <a href="https://github.com/imageXhe/simple_write" target="_blank" class="github-link">
