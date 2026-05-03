@@ -20,7 +20,7 @@
 
 ### GitHub
 
-- [Simple Write on GitHub](https://github.com/imageXhe/simple-write)
+- [Simple Write on GitHub](https://github.com/imageXhe/simple_write)
 
 ---
 
@@ -40,4 +40,4 @@
 
 ### GitHub
 
-- [Simple Write 的 GitHub 页面](https://github.com/imageXhe/simple-write)
+- [Simple Write 的 GitHub 页面](https://github.com/imageXhe/simple_write)
