@@ -392,7 +392,6 @@ const duplicateEntry = async (item) => {
     try {
         await invokeDuplicateFileEntry({ key: item?.key || [] });
         await loadFileTree();
-        message.success(t("message.success"));
     } catch (error) {
         message.error(error?.message || t("message.error"));
     }
@@ -490,25 +489,44 @@ const moveEntry = async () => {
     return true;
 };
 
-const confirmDeleteEntry = (item) => {
-    Modal.confirm({
-        title: t("file.delete"),
-        content: t("file.confirmDelete"),
-        okText: t("file.confirm"),
-        cancelText: t("file.cancel"),
-        async onOk() {
-            try {
-                const itemPath = buildItemPath(item?.key || []);
-                await invokeDeleteFileEntry({ key: item?.key || [] });
-                closeTabsByPathPrefix(itemPath);
-                await loadFileTree();
-                message.success(t("message.success"));
-            } catch (error) {
-                message.error(error?.message || t("message.error"));
-                throw error;
-            }
-        },
-    });
+const confirmDuplicateOrDeleteEntry = (item, action) => {
+    if (action === "duplicate") {
+        Modal.confirm({
+            title: t("file.createCopy"),
+            content: t("file.confirmDuplicate"),
+            okText: t("file.confirm"),
+            cancelText: t("file.cancel"),
+            async onOk() {
+                try {
+                    const itemPath = buildItemPath(item?.key || []);
+                    await duplicateEntry(item);
+                    message.success(t("message.success"));
+                } catch (error) {
+                    message.error(error?.message || t("message.error"));
+                    throw error;
+                }
+            },
+        }); 
+    }else{
+        Modal.confirm({
+            title: t("file.delete"),
+            content: t("file.confirmDelete"),
+            okText: t("file.confirm"),
+            cancelText: t("file.cancel"),
+            async onOk() {
+                try {
+                    const itemPath = buildItemPath(item?.key || []);
+                    await invokeDeleteFileEntry({ key: item?.key || [] });
+                    closeTabsByPathPrefix(itemPath);
+                    await loadFileTree();
+                    message.success(t("message.success"));
+                } catch (error) {
+                    message.error(error?.message || t("message.error"));
+                    throw error;
+                }
+            },
+        }); 
+    }
 };
 
 const handleConfirmAction = async () => {
@@ -552,7 +570,7 @@ const handleFileContextAction = async ({ action, item }) => {
     }
 
     if (action === "duplicate") {
-        await duplicateEntry(item);
+        confirmDuplicateOrDeleteEntry(item, action);
         return;
     }
 
@@ -572,7 +590,7 @@ const handleFileContextAction = async ({ action, item }) => {
     }
 
     if (action === "delete") {
-        confirmDeleteEntry(item);
+        confirmDuplicateOrDeleteEntry(item, action);
     }
 };
 

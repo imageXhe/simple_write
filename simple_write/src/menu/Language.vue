@@ -7,7 +7,7 @@
 
   <div>
     <a-modal 
-      :title="t('common.language')" 
+      title="Language" 
       v-model:open="LanguageModalVisible" 
       destroyOnClose
       :maskClosable="false"

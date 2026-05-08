@@ -103,19 +103,21 @@
                             </button>
                         </a-tooltip>
 
-                        <!-- 大纲 -->
-                        <a-tooltip :title="t('content.outline')" :arrow="false" placement="bottom">
-                            <a-button type="text" class="content-view__header-button" @click="openOutline">
-                                <BarsOutlined />
-                            </a-button>
-                        </a-tooltip>
+                        <div v-if="isMarkdownFile">
+                            <!-- 大纲 -->
+                            <a-tooltip :title="t('content.outline')" :arrow="false" placement="bottom">
+                                <a-button type="text" class="content-view__header-button" @click="openOutline">
+                                    <BarsOutlined />
+                                </a-button>
+                            </a-tooltip>
 
-                        <!-- 链接列表 -->
-                        <a-tooltip :title="t('content.linkList')" :arrow="false" placement="bottom">
-                            <a-button type="text" class="content-view__header-button" @click="openLinkList">
-                                <LinkOutlined />
-                            </a-button>
-                        </a-tooltip>
+                            <!-- 链接列表 -->
+                            <a-tooltip :title="t('content.linkList')" :arrow="false" placement="bottom">
+                                <a-button type="text" class="content-view__header-button" @click="openLinkList">
+                                    <LinkOutlined />
+                                </a-button>
+                            </a-tooltip>
+                        </div>
 
                         <!-- 更多选项 -->
                         <!-- <div class="content-view__more-wrap">
@@ -140,6 +142,15 @@
                                     >
                                         {{ t('file.favorite') }}
                                     </a-menu-item>
+                                    <div v-if="isMarkdownFile">
+                                        <a-menu-divider />
+                                        <a-menu-item
+                                            @click="handleMoreClick('export')"
+                                            :icon="h(DeliveredProcedureOutlined)"
+                                        >
+                                            {{ t('file.export') }}
+                                        </a-menu-item>
+                                    </div>
                                 </a-menu>
                             </template>
                         </a-dropdown>
@@ -208,14 +219,29 @@
 
         <!-- 重命名弹窗 -->
         <a-modal v-model:open="renameModalOpen" :title="t('file.rename')" :ok-text="t('file.confirm')" :cancel-text="t('file.cancel')" @ok="handleRename">
-            <div class="modal-form-hint">{{ t('file.currentName') }}: {{ activeTab?.name }}</div>
-            <a-input v-model:value="renameNewName" :placeholder="t('file.newName')" />
+            <a-input :addon-before="t('file.currentName')" disabled :value="activeTab?.name" />
+            <br /><br />
+            <a-input :addon-before="t('file.newName')" :placeholder="t('file.enter')" v-model:value="renameNewName" />
         </a-modal>
 
         <!-- 移动弹窗 -->
         <a-modal v-model:open="moveModalOpen" :title="t('file.move')" :ok-text="t('file.confirm')" :cancel-text="t('file.cancel')" @ok="handleMove">
-            <div class="modal-form-hint">{{ t('file.currentPath') }}: {{ activeTab?.path }}</div>
-            <a-input v-model:value="moveTargetPath" :placeholder="t('file.selectNewPath')" readonly @click="selectMoveTarget" class="modal-path-input" />
+            <a-input :addon-before="t('file.currentPath')" disabled :value="activeTab?.path" />
+            <br /><br />
+            <a-input :addon-before="t('file.newPath')" :placeholder="t('file.pleaseSelectDirectory')" v-model:value="moveTargetPath" disabled />
+            <br /><br />
+            <a-button type="primary" block @click="selectMoveTarget">{{ t('file.selectNewPath') }}</a-button>
+        </a-modal>
+
+        <!-- 导出弹窗 -->
+        <a-modal v-model:open="exportModalOpen" :title="t('file.export')" :ok-text="t('file.confirm')" :cancel-text="t('file.cancel')" @ok="handleExport">
+            <a-input :addon-before="t('file.currentName')" disabled :value="activeTab?.name" />
+            <br /><br />
+            <a-input :addon-before="t('file.newName')" :placeholder="t('file.enter')" v-model:value="exportFileName" addon-after=".txt" />
+            <br /><br />
+            <a-input :addon-before="t('file.newPath')" :placeholder="t('file.pleaseSelectDirectory')" v-model:value="exportTargetPath" disabled />
+            <br /><br />
+            <a-button type="primary" block @click="selectExportTarget">{{ t('file.selectNewPath') }}</a-button>
         </a-modal>
 
         <!-- 链接列表弹窗-->
@@ -232,7 +258,7 @@
                     </div>
                     <template #tab>
                         <a-tooltip :title="t('content.outgoingLink')" placement="top" :arrow="false">
-                            <span class="link-list-tab"><LinkOutlined style="margin-right:4px;" />{{ outgoingLinks.length }}</span>
+                            <span><LinkOutlined style="margin-right:5px;" />{{ outgoingLinks.length }}</span>
                         </a-tooltip>
                     </template>
                 </a-tab-pane>
@@ -246,7 +272,7 @@
                     </div>
                     <template #tab>
                         <a-tooltip :title="t('content.incomingLink')" placement="top" :arrow="false">
-                            <span class="link-list-tab"><ExportOutlined style="margin-right:4px;" />{{ incomingLinks.length }}</span>
+                            <span><ExportOutlined style="margin-right:5px;" />{{ incomingLinks.length }}</span>
                         </a-tooltip>
                     </template>
                 </a-tab-pane>
@@ -308,13 +334,15 @@ import {
     ExportOutlined,
     DownOutlined,
     CaretDownOutlined,
-    CaretRightOutlined
+    CaretRightOutlined,
+    DeliveredProcedureOutlined
 } from "@ant-design/icons-vue";
 import { saveFileContent, renameFileEntry, moveFileEntry, getWarehouseRootPath } from "../menu/fileActions";
 import { createFavorite, removeFavorite, fetchFavorites } from "../menu/favoriteActions";
 import { scanLinks, getOutgoingLinks, getIncomingLinks } from "../menu/linkActions";
 import { fileData, warehousePath, flattenTree } from "../stores/fileStore";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { Marked } from "marked";
 import { useI18n } from "../locales";
 import EditView from "./EditView.vue";
 import ReadView from "./ReadView.vue";
@@ -373,6 +401,11 @@ const hasDirtyTabs = computed(() => tabs.value.some((tab) => tab.isDirty));
 const isImageFile = computed(() => {
     if (!activeTab.value?.path) return false;
     return imageExtensions.includes(getFileExtension(activeTab.value.path));
+});
+
+const isMarkdownFile = computed(() => {
+    if (!activeTab.value?.path) return false;
+    return getFileExtension(activeTab.value.path) === 'md';
 });
 
 const canSwitchView = computed(() => {
@@ -646,6 +679,10 @@ const handleRename = async () => {
 const moveModalOpen = ref(false);
 const moveTargetPath = ref('');
 
+const exportModalOpen = ref(false);
+const exportFileName = ref('');
+const exportTargetPath = ref('');
+
 const openMoveModal = () => {
     moveTargetPath.value = '';
     moveModalOpen.value = true;
@@ -683,6 +720,69 @@ const handleMove = async () => {
     }
 };
 
+// 将 markdown 内容转为纯文本（去除所有格式符号）
+const markdownToPlainText = (md) => {
+    const marked = new Marked();
+    const html = marked.parse(md ?? '');
+    // 去除 HTML 标签，解码实体
+    return html
+        .replace(/<[^>]*>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+};
+
+const selectExportTarget = async () => {
+    const selected = await openDialog({ multiple: false, directory: true });
+    if (typeof selected === 'string' && selected.trim()) {
+        const wsPath = (warehousePath.value || '').replace(/\\/g, '/');
+        const selPath = selected.replace(/\\/g, '/');
+        if (!selPath.startsWith(wsPath)) {
+            message.warning(t('file.pathMustBeWithinWarehouse'));
+            return;
+        }
+        exportTargetPath.value = selected;
+    }
+};
+
+const handleExport = async () => {
+    const tab = activeTab.value;
+    if (!tab) return;
+    const name = exportFileName.value.trim();
+    if (!name) { message.warning(t('file.pleaseEnterName')); return; }
+    const targetPath = exportTargetPath.value.trim();
+    if (!targetPath) { message.warning(t('file.pleaseSelectDirectory')); return; }
+    try {
+        const plainText = markdownToPlainText(tab.content ?? '');
+        // 去重：导出路径下已有同名文件时追加 (1)、(2)...
+        const basePath = targetPath.replace(/\\/g, '/').replace(/\/+$/, '');
+        const allFiles = flattenTree(fileData.value, warehousePath.value);
+        const siblings = new Set(
+            allFiles
+                .map(f => f.path.replace(/\\/g, '/'))
+                .filter(p => p.startsWith(basePath + '/') && p.lastIndexOf('/') === basePath.length)
+                .map(p => p.split('/').pop())
+        );
+        let finalName = name;
+        let counter = 0;
+        while (siblings.has(finalName + '.txt')) {
+            counter++;
+            finalName = `${name}(${counter})`;
+        }
+        const filePath = basePath + '/' + finalName + '.txt';
+        await saveFileContent(filePath, plainText);
+        window.dispatchEvent(new CustomEvent('simple-write:file-updated', { detail: { path: filePath } }));
+        message.success(t('message.success'));
+    } catch (e) {
+        message.error(e?.message || t('message.error'));
+    } finally {
+        exportModalOpen.value = false;
+    }
+};
+
 const undoCount = ref(0);
 const redoCount = ref(0);
 
@@ -713,6 +813,14 @@ const handleMoreClick = (key) => {
         nextTick(() => openMoveModal());
     } else if (key === 'favorite') {
         handleToggleFavorite();
+    } else if (key === 'export') {
+        const tab = activeTab.value;
+        if (tab) {
+            const base = (tab.name || '').replace(/\.md$/i, '');
+            exportFileName.value = base;
+            exportTargetPath.value = warehousePath.value || '';
+            exportModalOpen.value = true;
+        }
     }
 };
 

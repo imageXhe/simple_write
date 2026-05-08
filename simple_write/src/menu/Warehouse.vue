@@ -73,11 +73,11 @@
                         <h1 style="text-align: start; color: var(--text-primary, #262626);">{{ project_info.name }}</h1>
                         <h4 style="color: var(--text-tertiary, #8c8c8c);">{{ project_info.path }}</h4>
                         <a-divider style="margin: 10px 0;"/>
-                        <a-tabs size="small" v-model:activeKey="activeKey" centered :tabBarGutter="30">
+                        <a-tabs size="small" v-model:activeKey="activeKey" centered>
                             <!-- 重命名 -->
                             <a-tab-pane key="1" >
                                 <template #tab>
-                                    <a-tooltip placement="top" :title="t('file.rename')" :arrow="0">
+                                    <a-tooltip placement="top" :title="t('file.rename')" :arrow="false">
                                         <EditOutlined class="tabBar_class"/>
                                     </a-tooltip>
                                 </template>
@@ -104,8 +104,8 @@
                             <!-- 移动 -->
                             <a-tab-pane key="2" >
                                 <template #tab>
-                                    <a-tooltip placement="top" :title="t('file.move')" :arrow="0">
-                                        <SnippetsOutlined class="tabBar_class"/>
+                                    <a-tooltip placement="top" :title="t('file.move')" :arrow="false">
+                                        <SvgIcon :raw="svgIcons.move" class="tabBar_class"></SvgIcon>
                                     </a-tooltip>
                                 </template>
                                 <div>
@@ -131,7 +131,7 @@
                             <!-- 删除 -->
                             <a-tab-pane key="3" >
                                 <template #tab>
-                                    <a-tooltip placement="top" :title="t('file.delete')" :arrow="0">
+                                    <a-tooltip placement="top" :title="t('file.delete')" :arrow="false">
                                         <DeleteOutlined class="tabBar_class"/>
                                     </a-tooltip>
                                 </template>
@@ -171,7 +171,6 @@ import {
     WalletOutlined,
     AppstoreAddOutlined,
     EditOutlined,
-    SnippetsOutlined,
     DeleteOutlined,
     ProfileOutlined,
     AppstoreOutlined
@@ -181,6 +180,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from '@tauri-apps/plugin-dialog';
 import { Store } from '@tauri-apps/plugin-store';
 import { useI18n } from "../locales";
+import svgIcons from "../assets/icons";
+import SvgIcon from "../components/SvgIcon.vue";
 
 const { t } = useI18n();
 

@@ -39,6 +39,7 @@ export default {
     rename: '重命名',
     delete: '删除',
     enter: '输入',
+    confirmDuplicate: '确定创建副本吗？',
     confirmRename: '确认重命名吗？',
     confirmDelete: '确认删除吗？',
     confirmMove: '确认移动吗？',
@@ -84,6 +85,7 @@ export default {
     confirmUnfavorite: '确认取消收藏？',
     deleteBookmark: '删除书签',
     confirmDeleteBookmark: '确认删除书签？',
+    export: '导出为txt文件',
   },
   content: {
     noFileSelected: '请选择左侧文件查看内容',
