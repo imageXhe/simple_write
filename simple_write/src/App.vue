@@ -12,6 +12,8 @@ import Setting from "./menu/Setting.vue";
 import Graph from "./views/Graph.vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n, loadLanguage } from "./locales";
+import { message } from "ant-design-vue";
+import { quickPaste } from "./menu/fileActions";
 import {
   MenuUnfoldOutlined,
   MenuFoldOutlined,
@@ -21,6 +23,9 @@ import {
   SearchOutlined,
   BookOutlined,
   StarOutlined,
+  DeliveredProcedureOutlined,
+  LinkOutlined,
+  SnippetsOutlined,
 } from "@ant-design/icons-vue";
 
 // 初始化语言
@@ -307,7 +312,7 @@ const loadTabContent = async (tabId) => {
       content: "",
       draftContent: "",
       loading: false,
-      error: error?.message || "读取文件失败",
+      error: error?.message || t('content.readFileFailed'),
       isDirty: false,
     });
   }
@@ -360,10 +365,6 @@ provide("updateTab", updateTab);
 provide("openFile", openFile);
 provide("replaceTabPathPrefix", replaceTabPathPrefix);
 provide("closeTabsByPathPrefix", closeTabsByPathPrefix);
-provide("canGoBack", canGoBack);
-provide("canGoForward", canGoForward);
-provide("goBack", goBack);
-provide("goForward", goForward);
 
 onMounted(async () => {
   if (!isRelationMode.value) {
@@ -418,6 +419,65 @@ const switchView = (view) => {
   currentView.value = view;
 };
 
+// 触发批量导出（由 FileList 监听）
+const openBatchExport = () => {
+  window.dispatchEvent(new CustomEvent("simple-write:open-batch-export"));
+};
+
+// 链接查看器
+const linkViewerOpen = ref(false);
+const customLinks = ref([]);
+
+const openLinkViewer = async () => {
+  linkViewerOpen.value = true;
+  customLinks.value = [];
+  try {
+    if (window.__TAURI_INTERNALS__) {
+      const { readCustomLinks } = await import("./menu/novelActions");
+      customLinks.value = await readCustomLinks();
+    }
+  } catch { /* 忽略 */ }
+};
+
+// 快速粘贴：读取剪贴板内容并追加到仓库根目录文件
+const handleQuickPaste = async () => {
+  try {
+    const fileName = t("quickPaste.fileName");
+    const filePath = await quickPaste(fileName);
+    message.success(t("quickPaste.success"));
+  } catch (error) {
+    // 后端返回错误类型码（格式: "error_type" 或 "error_type|detail"），前端做 i18n 翻译
+    const errMsg = error?.message || error || "";
+    const raw = typeof errMsg === "string" ? errMsg : String(errMsg);
+    const sep = raw.indexOf("|");
+    const code = sep > -1 ? raw.substring(0, sep) : raw;
+    const detail = sep > -1 ? raw.substring(sep + 1) : "";
+
+    const errorKeyMap = {
+      clipboard_access: "quickPaste.errorClipboardAccess",
+      clipboard_no_text: "quickPaste.errorClipboardNoText",
+      clipboard_empty: "quickPaste.errorClipboardEmpty",
+      duplicate_content: "quickPaste.errorDuplicateContent",
+      file_open: "quickPaste.errorFileOpen",
+      write_file: "quickPaste.errorWriteFile",
+    };
+
+    const i18nKey = errorKeyMap[code] || "quickPaste.error";
+    const msg = detail ? `${t(i18nKey)}: ${detail}` : t(i18nKey);
+    message.warning(msg);
+  }
+};
+
+const jumpToFile = async (filePath, locateText = "") => {
+  const name = filePath.split("/").filter(Boolean).pop() || filePath;
+  await openFile({ filePath, fileName: name });
+  if (locateText && locateText !== name) {
+    window.dispatchEvent(new CustomEvent("simple-write:locate-text", {
+      detail: { filePath, text: locateText },
+    }));
+  }
+};
+
 // 开始拖动
 const startResize = (e) => {
   isResizing.value = true;
@@ -468,7 +528,7 @@ const stopResize = () => {
           <a-tooltip :title="!panelExpanded ? t('common.expand') : t('common.collapse')" placement="right" :arrow="false">
             <a-button
               type="text"
-              class="expand-button"
+              class="sider-button"
               @click="panelExpanded = !panelExpanded"
             >
               <MenuUnfoldOutlined v-if="!panelExpanded" />
@@ -480,6 +540,27 @@ const stopResize = () => {
           <a-tooltip :title="t('common.relationGraph')" placement="right" :arrow="false">
             <a-button type="text" class="sider-button" @click="openRelationGraph">
               <DeploymentUnitOutlined />
+            </a-button>
+          </a-tooltip>
+
+          <!-- 批量导出按钮 -->
+          <a-tooltip :title="t('common.batchExport')" placement="right" :arrow="false">
+            <a-button type="text" class="sider-button" @click="openBatchExport">
+              <DeliveredProcedureOutlined />
+            </a-button>
+          </a-tooltip>
+
+          <!-- 查看链接按钮 -->
+          <a-tooltip :title="t('common.viewLinks')" placement="right" :arrow="false">
+            <a-button type="text" class="sider-button" @click="openLinkViewer">
+              <LinkOutlined />
+            </a-button>
+          </a-tooltip>
+
+          <!-- 快速粘贴按钮 -->
+          <a-tooltip :title="t('quickPaste.tooltip')" placement="right" :arrow="false">
+            <a-button type="text" class="sider-button" @click="handleQuickPaste">
+              <SnippetsOutlined />
             </a-button>
           </a-tooltip>
 
@@ -521,7 +602,7 @@ const stopResize = () => {
             <!-- 文件列表按钮 -->
             <a-tooltip :title="t('file.fileList')" placement="bottom" :arrow="false">
               <a-button
-                class="sider-panel-siderbutton"
+                class="sider-panel-siderbutton" ghost
                 :type="currentView === 'filelist' ? 'primary' : 'text'"
                 @click="switchView('filelist')"
               >
@@ -532,7 +613,7 @@ const stopResize = () => {
             <!-- 搜索按钮 -->
             <a-tooltip :title="t('file.search')" placement="bottom" :arrow="false">
               <a-button
-                class="sider-panel-siderbutton"
+                class="sider-panel-siderbutton" ghost
                 :type="currentView === 'search' ? 'primary' : 'text'"
                 @click="switchView('search')"
               >
@@ -543,7 +624,7 @@ const stopResize = () => {
             <!-- 书签按钮 -->
             <a-tooltip :title="t('file.bookmark')" placement="bottom" :arrow="false">
               <a-button
-                class="sider-panel-siderbutton"
+                class="sider-panel-siderbutton" ghost
                 :type="currentView === 'bookmark' ? 'primary' : 'text'"
                 @click="switchView('bookmark')"
               >
@@ -554,7 +635,7 @@ const stopResize = () => {
             <!-- 收藏按钮 -->
             <a-tooltip :title="t('file.favorite')" placement="bottom" :arrow="false">
               <a-button
-                class="sider-panel-siderbutton"
+                class="sider-panel-siderbutton" ghost
                 :type="currentView === 'favorite' ? 'primary' : 'text'"
                 @click="switchView('favorite')"
               >
@@ -590,6 +671,15 @@ const stopResize = () => {
         <Content />
       </a-layout-content>
     </a-layout>
+
+    <!-- 查看链接弹窗 -->
+    <a-modal v-model:open="linkViewerOpen" :title="t('content.allLinks')" :footer="null" width="500px">
+      <div v-if="customLinks.length === 0" style="color:var(--text-disabled,#bfbfbf);text-align:center;padding:24px;">{{ t('content.noLinks') }}</div>
+      <div v-for="link in customLinks" :key="link.id" class="link-viewer-item">
+        <span class="link-viewer-name" @click="jumpToFile(link.targetPath, link.targetText)">{{ link.name }}</span>
+        <span class="link-viewer-target">{{ link.targetText || link.targetPath.split('/').pop() || link.targetPath }}</span>
+      </div>
+    </a-modal>
   </a-layout>
 </template>
 
@@ -640,7 +730,6 @@ const stopResize = () => {
   pointer-events: none;
 }
 
-.expand-button,
 .sider-button {
   width: 34px;
   height: 34px;
@@ -773,7 +862,7 @@ const stopResize = () => {
 
 </style>
 
-<!-- 全局 antd 组件主题覆盖（非 scoped，!important 对抗 antd 运行时注入的样式） -->
+<!-- 全局 antd 组件主题覆盖和主题修复（非 scoped） -->
 <style>
 /* 文字按钮（左侧图标按钮、面板标签按钮） */
 .ant-btn.ant-btn-text:not(:disabled) {
@@ -849,6 +938,18 @@ const stopResize = () => {
 }
 .ant-dropdown-menu .ant-dropdown-menu-item:hover {
   background-color: var(--bg-tertiary, #f5f5f5) !important;
+}
+/* 子菜单标题 */
+.ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  color: var(--text-primary, #262626) !important;
+}
+.ant-dropdown-menu .ant-dropdown-menu-submenu-title:hover {
+  background-color: var(--bg-tertiary, #f5f5f5) !important;
+}
+/* 子菜单图标 */
+.ant-dropdown-menu .ant-dropdown-menu-submenu-title .anticon,
+.ant-dropdown-menu .ant-dropdown-menu-submenu-title .svg-icon {
+  color: var(--text-secondary, #595959) !important;
 }
 
 /* 卡片 */
@@ -930,4 +1031,81 @@ const stopResize = () => {
   background-color: var(--bg-elevated, #fff) !important;
   border-bottom-color: var(--border-secondary, #f0f0f0) !important;
 }
+
+/* ---- 主题修复：搜索/书签/收藏 allow-clear 区域 ---- */
+.ant-input-clear-icon {
+  color: var(--text-tertiary, #8c8c8c) !important;
+}
+.ant-input-affix-wrapper .ant-input-suffix {
+  background-color: var(--bg-base, #fff) !important;
+}
+.ant-input-affix-wrapper {
+  background-color: var(--bg-base, #fff) !important;
+}
+.ant-input-affix-wrapper .ant-input {
+  background-color: var(--bg-base, #fff) !important;
+}
+
+/* ---- 滚动条主题覆盖 ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary, #fafafa);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--text-disabled, #bfbfbf);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary, #8c8c8c);
+}
+
+/* ---- 搜索框内部背景 ---- */
+.ant-input-search .ant-input-wrapper,
+.ant-input-search .ant-input-affix-wrapper {
+  background-color: var(--bg-base, #fff) !important;
+}
+
+/* ---- 大纲统计区域文字颜色 ---- */
+.outline-stats-bar {
+  border-bottom-color: var(--border-secondary, #f0f0f0) !important;
+}
+.outline-stats__total {
+  color: var(--text-primary, #262626) !important;
+}
+.outline-stats__row {
+  color: var(--text-tertiary, #8c8c8c) !important;
+}
+
+/* ---- 右键菜单中图标颜色修复 ---- */
+.ant-dropdown-menu-submenu-title .anticon,
+.ant-dropdown-menu-item .anticon {
+  color: var(--text-secondary, #595959) !important;
+}
+.ant-dropdown-menu-item-danger .anticon {
+  color: #ff4d4f !important;
+}
+
+/* ---- 选择文本高亮 ---- */
+::selection {
+  background: rgba(24, 144, 255, 0.3);
+  color: inherit;
+}
+
+/* ---- Tab 下拉菜单滚动条 ---- */
+.ant-dropdown-menu::-webkit-scrollbar-track {
+  background: var(--bg-elevated, #fff);
+}
+
+/* ---- 链接查看器 ---- */
+.link-viewer-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; border-bottom: 1px solid var(--border-secondary, #f0f0f0);
+}
+.link-viewer-item:last-child { border-bottom: none; }
+.link-viewer-name { color: #1890ff; cursor: pointer; font-size: 13px; }
+.link-viewer-name:hover { text-decoration: underline; }
+.link-viewer-target { color: var(--text-tertiary, #8c8c8c); font-size: 12px; }
 </style>

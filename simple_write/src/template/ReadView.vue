@@ -55,6 +55,7 @@
         <template #overlay>
             <a-menu class="dropdown-menu-bordered" @click="handleMenuClick">
                 <a-menu-item key="read-newBookMark" :icon="h(BookOutlined)">{{ t("content.newBookMark") }}</a-menu-item>
+                <a-menu-item key="read-makeLink" :icon="h(LinkOutlined)">{{ t('txtEditor.makeLink') }}</a-menu-item>
             </a-menu>
         </template>
     </a-dropdown>
@@ -64,7 +65,7 @@
 import { computed, h, ref, watch, inject, nextTick, onMounted, onUnmounted, onActivated, onDeactivated } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "ant-design-vue";
-import { BookOutlined } from "@ant-design/icons-vue";
+import { BookOutlined, LinkOutlined } from "@ant-design/icons-vue";
 import { open } from "@tauri-apps/plugin-shell";
 import { Marked } from "marked";
 import markedFootnote from "marked-footnote";
@@ -789,6 +790,17 @@ const handleMenuClick = async ({ key }) => {
         await handleCreateBookmark();
         return;
     }
+    if (key === "read-makeLink") {
+        const selectedText = window.getSelection?.()?.toString?.().trim?.() || "";
+        window.dispatchEvent(new CustomEvent("simple-write:open-make-link", {
+            detail: {
+                filePath: props.filePath,
+                targetText: selectedText || props.fileName || "",
+                selectedText,
+            },
+        }));
+        return;
+    }
     message.info("阅读视图右键功能待定");
 };
 
@@ -1314,6 +1326,11 @@ onUnmounted(() => {
     min-height: 80px;
     overflow: auto;
     background: var(--bg-base, #fff);
+    color: var(--text-primary, #262626);
+}
+
+.wiki-preview__body :deep(*) {
+    color: inherit;
 }
 
 /* v-html 内的链接样式（需要 :deep() 穿透） */

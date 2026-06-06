@@ -1,13 +1,16 @@
 use crate::menu::bookmark::{remove_bookmarks_by_path_prefix, replace_bookmark_path_prefix};
 use crate::menu::favorite::{remove_favorites_by_path_prefix, replace_favorite_path_prefix};
+use crate::menu::novel_json::{sync_txt_meta_rename, sync_txt_meta_remove, sync_custom_links_rename, sync_custom_links_remove};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use std::collections::hash_map::DefaultHasher;
 use base64::Engine;
 use std::ffi::OsStr;
+use regex::Regex;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -104,6 +107,19 @@ fn save_file_tree(warehouse_path: &str, node_list: &[FileNode]) -> Result<(), St
 
 fn current_time_string() -> String {
     Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+// 快速粘贴功能专用时间戳格式：2026.01.23 15:52:12
+fn quick_paste_timestamp() -> String {
+    Local::now().format("%Y.%m.%d %H:%M:%S").to_string()
+}
+
+// 快速粘贴错误类型码（前端根据类型码做 i18n 翻译）
+fn quick_paste_err(code: &str, detail: Option<&str>) -> String {
+    match detail {
+        Some(d) => format!("{}|{}", code, d),
+        None => code.to_string(),
+    }
 }
 
 fn format_system_time(time: SystemTime) -> String {
@@ -480,6 +496,59 @@ pub fn save_file_content(file_path: String, content: String) -> Result<(), Strin
     fs::write(path, content).map_err(|error| error.to_string())
 }
 
+// 快速粘贴：读取剪贴板内容并追加到仓库根目录下的文件
+#[tauri::command]
+pub fn quick_paste(warehouse_path: String, file_name: String) -> Result<String, String> {
+    let err = |code: &str| quick_paste_err(code, None);
+    let err_detail = |code: &str, detail: &str| quick_paste_err(code, Some(detail));
+
+    // 1. 读取剪贴板内容
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|e| err_detail("clipboard_access", &e.to_string()))?;
+
+    let content = clipboard
+        .get_text()
+        .map_err(|_| err("clipboard_no_text"))?;
+
+    // 2. 检查内容是否为空或全是空白字符
+    if content.trim().is_empty() {
+        return Err(err("clipboard_empty"));
+    }
+
+    // 3. 构建文件路径
+    let file_path = Path::new(&warehouse_path).join(format!("{}.txt", file_name));
+
+    // 4. 检查是否与上次粘贴内容重复
+    if file_path.exists() {
+        if let Ok(existing) = fs::read_to_string(&file_path) {
+            let re = Regex::new(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\n")
+                .map_err(|_| err("file_open"))?;
+            if let Some(last_match) = re.find_iter(&existing).last() {
+                let after_ts = &existing[last_match.end()..];
+                let last_content = after_ts.trim_end_matches(|c| c == '\n' || c == '\r');
+                if last_content == content {
+                    return Err(err("duplicate_content"));
+                }
+            }
+        }
+    }
+
+    // 5. 以追加模式打开文件（不存在则创建）
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file_path)
+        .map_err(|e| err_detail("file_open", &e.to_string()))?;
+
+    // 6. 写入时间戳、内容和空行分隔
+    let timestamp = quick_paste_timestamp();
+    writeln!(file, "{}", timestamp).map_err(|e| err_detail("write_file", &e.to_string()))?;
+    writeln!(file, "{}", content).map_err(|e| err_detail("write_file", &e.to_string()))?;
+    writeln!(file).map_err(|e| err_detail("write_file", &e.to_string()))?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 pub fn test(warehouse_path: String) -> String {
     let path_total: String = format!("{}{}{}", warehouse_path, "/", JSON_PATH);
@@ -548,6 +617,8 @@ pub fn rename_file_entry(request: RenameFileRequest) -> Result<Vec<FileNode>, St
     fs::rename(&source_path, &target_path).map_err(|error| error.to_string())?;
     replace_favorite_path_prefix(&request.warehouse_path, &source_path_string, &target_path_string)?;
     replace_bookmark_path_prefix(&request.warehouse_path, &source_path_string, &target_path_string)?;
+    let _ = sync_txt_meta_rename(&request.warehouse_path, &source_path_string, &target_path_string);
+    let _ = sync_custom_links_rename(&request.warehouse_path, &source_path_string, &target_path_string);
     refresh_file_tree(&request.warehouse_path)
 }
 
@@ -590,6 +661,8 @@ pub fn move_file_entry(request: MoveFileRequest) -> Result<Vec<FileNode>, String
     fs::rename(&source_path, &target_path).map_err(|error| error.to_string())?;
     replace_favorite_path_prefix(&request.warehouse_path, &source_path_string, &target_path_string)?;
     replace_bookmark_path_prefix(&request.warehouse_path, &source_path_string, &target_path_string)?;
+    let _ = sync_txt_meta_rename(&request.warehouse_path, &source_path_string, &target_path_string);
+    let _ = sync_custom_links_rename(&request.warehouse_path, &source_path_string, &target_path_string);
     refresh_file_tree(&request.warehouse_path)
 }
 
@@ -613,8 +686,9 @@ pub fn delete_file_entry(request: DeleteFileRequest) -> Result<Vec<FileNode>, St
     let warehouse_root = Path::new(&request.warehouse_path);
     let source_path = resolve_entry_path(warehouse_root, &request.key)?;
     let source_path_string = source_path.to_string_lossy().replace("\\", "/");
+    let is_folder = source_path.is_dir();
 
-    if source_path.is_dir() {
+    if is_folder {
         fs::remove_dir_all(&source_path).map_err(|error| error.to_string())?;
     } else {
         fs::remove_file(&source_path).map_err(|error| error.to_string())?;
@@ -622,5 +696,7 @@ pub fn delete_file_entry(request: DeleteFileRequest) -> Result<Vec<FileNode>, St
 
     remove_favorites_by_path_prefix(&request.warehouse_path, &source_path_string)?;
     remove_bookmarks_by_path_prefix(&request.warehouse_path, &source_path_string)?;
+    let _ = sync_txt_meta_remove(&request.warehouse_path, &source_path_string, is_folder);
+    let _ = sync_custom_links_remove(&request.warehouse_path, &source_path_string);
     refresh_file_tree(&request.warehouse_path)
 }

@@ -5,3 +5,4 @@ pub mod bookmark;
 pub mod favorite;
 pub mod link_json;
 pub mod graph_json;
+pub mod novel_json;

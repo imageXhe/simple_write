@@ -62,33 +62,7 @@
             <template v-if="activeTab">
                 <div class="content-view__header">
                     <div class="content-view__header-side content-view__header-side--left">
-                        <a-tooltip :title="t('content.back')" placement="bottom" :arrow="false">
-                            <button
-                                type="button"
-                                class="content-view__header-button"
-                                :disabled="!canGoBack"
-                                @click="handleGoBack"
-                            >
-                                <LeftOutlined />
-                            </button>
-                        </a-tooltip>
-
-                        <a-tooltip :title="t('content.forward')" placement="bottom" :arrow="false">
-                            <button
-                                type="button"
-                                class="content-view__header-button"
-                                :disabled="!canGoForward"
-                                @click="handleGoForward"
-                            >
-                                <RightOutlined />
-                            </button>
-                        </a-tooltip>
-                    </div>
-
-                    <div class="content-view__header-title">{{ activeTab.name }}</div>
-
-                    <div class="content-view__header-side content-view__header-side--right">
-                        <a-tooltip :title="t('content.changeViewMode')" placement="bottomRight" :arrow="false">
+                        <a-tooltip :title="t('content.changeViewMode')" placement="bottom" :arrow="false">
                             <button
                                 type="button"
                                 class="content-view__header-switch"
@@ -102,6 +76,11 @@
                                 </span>
                             </button>
                         </a-tooltip>
+                    </div>
+
+                    <div class="content-view__header-title">{{ activeTab.name }}</div>
+
+                    <div class="content-view__header-side content-view__header-side--right">
 
                         <div v-if="isMarkdownFile">
                             <!-- 大纲 -->
@@ -120,17 +99,17 @@
                         </div>
 
                         <!-- 更多选项 -->
-                        <!-- <div class="content-view__more-wrap">
-                        </div> -->
                         <a-dropdown overlay-class-name="more-menu-dropdown">
                             <a-button type="text" :icon="h(EllipsisOutlined)" class="content-view__header-button"/>
                             <template #overlay>
                                 <a-menu>
-                                    <a-menu-item :disabled="!canUndo" @click="canUndo && handleMoreClick('undo')" :icon="h(UndoOutlined)">
-                                        {{ t('content.undo') }}</a-menu-item>
-                                    <a-menu-item :disabled="!canRedo" @click="canRedo && handleMoreClick('redo')" :icon="h(RedoOutlined)">
-                                        {{ t('content.redo') }}</a-menu-item>
-                                    <a-menu-divider />
+                                    <div v-if="activeTabViewMode === 'edit'">
+                                        <a-menu-item :disabled="!canUndo" @click="canUndo && handleMoreClick('undo')" :icon="h(UndoOutlined)">
+                                            {{ t('content.undo') }}</a-menu-item>
+                                        <a-menu-item :disabled="!canRedo" @click="canRedo && handleMoreClick('redo')" :icon="h(RedoOutlined)">
+                                            {{ t('content.redo') }}</a-menu-item>
+                                        <a-menu-divider />
+                                    </div>
                                     <a-menu-item @click="handleMoreClick('rename')" :icon="h(EditOutlined)">
                                         {{ t('file.rename') }}</a-menu-item>
                                     <a-menu-item @click="handleMoreClick('move')" :icon="h(SvgIcon, { raw: svgIcons.move })">
@@ -142,7 +121,10 @@
                                     >
                                         {{ t('file.favorite') }}
                                     </a-menu-item>
-                                    <div v-if="isMarkdownFile">
+                                    <a-menu-item @click="handleMoreClick('makelink')" :icon="h(LinkOutlined)">
+                                        {{ t('content.makeLink') }}
+                                    </a-menu-item>
+                                    <div v-if="isMarkdownFile || isTxtFile">
                                         <a-menu-divider />
                                         <a-menu-item
                                             @click="handleMoreClick('export')"
@@ -186,7 +168,8 @@
                 </div>
 
                 <template v-else>
-                    <KeepAlive>
+                    <!-- md 文件编辑视图 -->
+                    <KeepAlive v-if="isMarkdownFile">
                         <EditView
                             v-if="activeTabViewMode === 'edit'"
                             ref="editViewRef"
@@ -196,10 +179,37 @@
                             :disabled="isSaving"
                             :is-dirty="activeTabIsDirty"
                             :is-saving="isSaving"
+                            :file-path="activeTab?.path"
                         />
                     </KeepAlive>
-                    <KeepAlive>
+                    <KeepAlive v-if="isMarkdownFile">
                         <ReadView
+                            v-if="activeTabViewMode === 'read'"
+                            :key="activeTabId"
+                            :content="activeTab.content"
+                            :file-path="activeTab.path"
+                            :file-name="activeTab.name"
+                            :top-line="savedTopLine"
+                            :restore-scroll-top="getTabScrollTop(activeTabId)"
+                        />
+                    </KeepAlive>
+
+                    <!-- txt 文件编辑视图 -->
+                    <KeepAlive v-if="isTxtFile">
+                        <TxtEditView
+                            v-if="activeTabViewMode === 'edit'"
+                            ref="txtEditViewRef"
+                            :key="activeTabId"
+                            :initial-content="activeTab?.draftContent ?? activeTab?.content ?? ''"
+                            :original-content="activeTab?.content ?? ''"
+                            :disabled="isSaving"
+                            :is-dirty="activeTabIsDirty"
+                            :is-saving="isSaving"
+                            :file-path="activeTab?.path"
+                        />
+                    </KeepAlive>
+                    <KeepAlive v-if="isTxtFile">
+                        <TxtReadView
                             v-if="activeTabViewMode === 'read'"
                             :key="activeTabId"
                             :content="activeTab.content"
@@ -279,6 +289,14 @@
             </a-tabs>
         </a-modal>
 
+        <!-- 制作链接弹窗 -->
+        <a-modal v-model:open="linkModalOpen" :title="t('content.makeLink')" :ok-text="t('file.confirm')" :cancel-text="t('file.cancel')" @ok="handleCreateLink" @cancel="linkModalOpen = false">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <a-input v-model:value="newLinkName" :addon-before="t('content.linkName')" :placeholder="t('content.enterLinkName')" />
+                <a-input v-model:value="newLinkTarget" :addon-before="t('content.linkContent')" disabled :placeholder="t('content.fileNameOrSelected')" />
+            </div>
+        </a-modal>
+
         <!-- 大纲弹窗 -->
         <a-modal v-model:open="outlineOpen" :title="t('content.outline')" :footer="null" width="360px" wrap-class-name="outline-modal">
             <div v-if="outlineItems.length === 0" class="link-list-empty">{{ t('content.noData') }}</div>
@@ -322,8 +340,6 @@ import { message, Modal } from "ant-design-vue";
 import {
     CloseOutlined,
     EllipsisOutlined,
-    LeftOutlined,
-    RightOutlined,
     BarsOutlined,
     ReadOutlined,
     EditOutlined,
@@ -346,6 +362,8 @@ import { Marked } from "marked";
 import { useI18n } from "../locales";
 import EditView from "./EditView.vue";
 import ReadView from "./ReadView.vue";
+import TxtEditView from "./TxtEditView.vue";
+import TxtReadView from "./TxtReadView.vue";
 import svgIcons from "../assets/icons";
 import SvgIcon from "../components/SvgIcon.vue";
 
@@ -359,10 +377,6 @@ const closeTab = inject("closeTab", () => {});
 const updateTab = inject("updateTab", () => {});
 const replaceTabPathPrefix = inject("replaceTabPathPrefix", () => {});
 const openFile = inject("openFile", null);
-const canGoBack = inject("canGoBack", ref(false));
-const canGoForward = inject("canGoForward", ref(false));
-const goBack = inject("goBack", () => {});
-const goForward = inject("goForward", () => {});
 
 // ---- 文件类型常量 ----
 const imageExtensions = ["png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico"];
@@ -381,6 +395,7 @@ const tabOverviewOpen = ref(false);
 const isSaving = ref(false);
 const isClosePromptOpen = ref(false);
 const editViewRef = ref(null);
+const txtEditViewRef = ref(null);
 
 const AUTO_SAVE_INTERVAL_MS = 3 * 60 * 1000;
 let autoSaveTimerId = null;
@@ -406,6 +421,11 @@ const isImageFile = computed(() => {
 const isMarkdownFile = computed(() => {
     if (!activeTab.value?.path) return false;
     return getFileExtension(activeTab.value.path) === 'md';
+});
+
+const isTxtFile = computed(() => {
+    if (!activeTab.value?.path) return false;
+    return getFileExtension(activeTab.value.path) === 'txt';
 });
 
 const canSwitchView = computed(() => {
@@ -478,7 +498,7 @@ const saveTabDraft = async (tabId) => {
         undoCount.value = 0; redoCount.value = 0;
         return true;
     } catch (error) {
-        message.error(error?.message || "保存文件失败");
+        message.error(error?.message || t('content.saveFileFailed'));
         return false;
     } finally {
         isSaving.value = false;
@@ -516,10 +536,12 @@ const handleGlobalKeydown = (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         // 同步 textarea 最新值
-        const textarea = editViewRef.value?.editorTextarea;
+        const textarea = isTxtFile.value
+            ? txtEditViewRef.value?.editorTextarea
+            : editViewRef.value?.editorTextarea;
         const tab = activeTab.value;
         if (textarea && tab) {
-            const val = textarea.value;
+            const val = getActiveEditorPlainContent();
             updateTab(tab.id, {
                 draftContent: val,
                 isDirty: val !== (tab.content ?? ""),
@@ -593,16 +615,7 @@ const requestCloseTab = (tabId) => {
     });
 };
 
-// ---- 导航 / 视图切换 ----
-const handleGoBack = () => {
-    if (canGoBack.value && typeof goBack === "function") goBack();
-};
-
-const handleGoForward = () => {
-    if (canGoForward.value && typeof goForward === "function") goForward();
-};
-
-// ---- 更多选项：收藏 ----
+// ---- 视图切换 ----
 const favoritedPaths = ref(new Set());
 
 const loadFavoritedPaths = async () => {
@@ -756,7 +769,9 @@ const handleExport = async () => {
     const targetPath = exportTargetPath.value.trim();
     if (!targetPath) { message.warning(t('file.pleaseSelectDirectory')); return; }
     try {
-        const plainText = markdownToPlainText(tab.content ?? '');
+        const plainText = isTxtFile.value
+            ? (tab.content ?? '')
+            : markdownToPlainText(tab.content ?? '');
         // 去重：导出路径下已有同名文件时追加 (1)、(2)...
         const basePath = targetPath.replace(/\\/g, '/').replace(/\/+$/, '');
         const allFiles = flattenTree(fileData.value, warehousePath.value);
@@ -794,14 +809,18 @@ watch(() => activeTab.value?.id, () => { undoCount.value = 0; redoCount.value = 
 
 const handleMoreClick = (key) => {
     if (key === 'undo') {
-        const textarea = editViewRef.value?.editorTextarea;
+        const textarea = isTxtFile.value
+            ? txtEditViewRef.value?.editorTextarea
+            : editViewRef.value?.editorTextarea;
         if (textarea) {
             textarea.focus();
             const ok = document.execCommand('undo');
             if (ok) { undoCount.value = Math.max(0, undoCount.value - 1); redoCount.value++; }
         }
     } else if (key === 'redo') {
-        const textarea = editViewRef.value?.editorTextarea;
+        const textarea = isTxtFile.value
+            ? txtEditViewRef.value?.editorTextarea
+            : editViewRef.value?.editorTextarea;
         if (textarea) {
             textarea.focus();
             const ok = document.execCommand('redo');
@@ -813,10 +832,12 @@ const handleMoreClick = (key) => {
         nextTick(() => openMoveModal());
     } else if (key === 'favorite') {
         handleToggleFavorite();
+    } else if (key === 'makelink') {
+        openMakeLink();
     } else if (key === 'export') {
         const tab = activeTab.value;
         if (tab) {
-            const base = (tab.name || '').replace(/\.md$/i, '');
+            const base = (tab.name || '').replace(/\.(md|txt)$/i, '');
             exportFileName.value = base;
             exportTargetPath.value = warehousePath.value || '';
             exportModalOpen.value = true;
@@ -844,12 +865,27 @@ const getTabScrollTop = (tabId) => {
 };
 
 const getTextareaTopLine = () => {
-    const ta = editViewRef.value?.editorTextarea;
+    const ta = isTxtFile.value
+        ? txtEditViewRef.value?.editorTextarea
+        : editViewRef.value?.editorTextarea;
     if (!ta) return 0;
     const style = window.getComputedStyle(ta);
     const lineH = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6 || 20;
     const padTop = parseFloat(style.paddingTop) || 0;
     return Math.max(0, Math.floor((ta.scrollTop - padTop) / lineH));
+};
+
+const getActiveEditorPlainContent = () => {
+    if (isTxtFile.value) {
+        return txtEditViewRef.value?.getPlainContent?.()
+            ?? activeTab.value?.draftContent
+            ?? activeTab.value?.content
+            ?? "";
+    }
+    return editViewRef.value?.editorTextarea?.value
+        ?? activeTab.value?.draftContent
+        ?? activeTab.value?.content
+        ?? "";
 };
 
 const getBodyTopLine = (body) => {
@@ -879,7 +915,9 @@ const toggleViewMode = async () => {
         });
         // 切到编辑：根据行号还原 textarea 滚动
         nextTick(() => {
-            const ta = editViewRef.value?.editorTextarea;
+            const ta = isTxtFile.value
+                ? txtEditViewRef.value?.editorTextarea
+                : editViewRef.value?.editorTextarea;
             if (!ta || savedTopLine.value <= 0) return;
             const style = window.getComputedStyle(ta);
             const lineH = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6 || 20;
@@ -890,10 +928,12 @@ const toggleViewMode = async () => {
     }
 
     // 切换到阅读视图前先同步 textarea 最新值
-    const textarea = editViewRef.value?.editorTextarea;
+    const textarea = isTxtFile.value
+        ? txtEditViewRef.value?.editorTextarea
+        : editViewRef.value?.editorTextarea;
     const tab = activeTab.value;
     if (textarea && tab) {
-        const val = textarea.value;
+        const val = getActiveEditorPlainContent();
         updateTab(tab.id, {
             draftContent: val,
             isDirty: val !== (tab.content ?? ""),
@@ -934,6 +974,15 @@ watch(
     }
 );
 
+watch(
+    () => [activeTab.value?.path, activeTab.value?.viewMode, activeTab.value?.content],
+    () => {
+        nextTick(() => {
+            tryResolvePendingLocate();
+        });
+    }
+);
+
 
 // ---- 任务列表切换同步 ----
 const handleTaskToggled = (e) => {
@@ -950,6 +999,8 @@ onMounted(async () => {
     window.addEventListener("keydown", handleGlobalKeydown);
     window.addEventListener("simple-write:task-toggled", handleTaskToggled);
     window.addEventListener("simple-write:save-scroll", handleSaveScroll);
+    window.addEventListener("simple-write:open-make-link", handleOpenMakeLinkEvent);
+    window.addEventListener("simple-write:locate-text", handleLocateTextEvent);
     if (!window.__TAURI_INTERNALS__) {
         window.addEventListener("beforeunload", handleBeforeUnload);
         return;
@@ -967,6 +1018,8 @@ onBeforeUnmount(() => {
     window.removeEventListener("keydown", handleGlobalKeydown);
     window.removeEventListener("simple-write:task-toggled", handleTaskToggled);
     window.removeEventListener("simple-write:save-scroll", handleSaveScroll);
+    window.removeEventListener("simple-write:open-make-link", handleOpenMakeLinkEvent);
+    window.removeEventListener("simple-write:locate-text", handleLocateTextEvent);
     window.removeEventListener("beforeunload", handleBeforeUnload);
     if (typeof closeWindowUnlisten === "function") {
         closeWindowUnlisten();
@@ -1027,6 +1080,103 @@ const openLinkedFile = (filePath) => {
     if (typeof openFile === 'function') {
         openFile({ filePath, fileName: name });
     }
+};
+
+// ---- 制作链接 ----
+const linkModalOpen = ref(false);
+const newLinkName = ref("");
+const newLinkTarget = ref("");
+const newLinkTargetPath = ref("");
+const pendingLocateRequest = ref(null);
+
+const openMakeLink = (payload = null) => {
+    const tab = activeTab.value;
+    if (!tab) return;
+    const targetTextFromEvent = payload?.targetText?.trim?.() || "";
+    const selectedTextFromEvent = payload?.selectedText?.trim?.() || "";
+    newLinkTargetPath.value = payload?.filePath || tab.path || "";
+    const ta = isTxtFile.value
+        ? txtEditViewRef.value?.editorTextarea
+        : editViewRef.value?.editorTextarea;
+    let selectedText = selectedTextFromEvent;
+    if (!selectedText && ta) {
+        const s = ta.selectionStart;
+        const e = ta.selectionEnd;
+        selectedText = s !== e ? ta.value.slice(s, e).trim() : "";
+    }
+    newLinkTarget.value = targetTextFromEvent || selectedText || tab.name || "";
+    newLinkName.value = selectedText || targetTextFromEvent || "";
+    linkModalOpen.value = true;
+};
+
+const handleCreateLink = async () => {
+    if (!newLinkName.value.trim() || !newLinkTarget.value.trim() || !newLinkTargetPath.value.trim()) { return; }
+    try {
+        const { addCustomLink } = await import("../menu/novelActions");
+        await addCustomLink({
+            id: "lnk_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+            name: newLinkName.value.trim(),
+            targetPath: newLinkTargetPath.value.trim(),
+            targetText: newLinkTarget.value.trim(),
+            sourcePath: activeTab.value?.path || "",
+        });
+        message.success(t('content.linkCreated'));
+    } catch (e) { message.error(e?.message || t('content.createLinkFailed')); }
+    linkModalOpen.value = false;
+};
+
+const focusEditorSelection = (text) => {
+    const textarea = isTxtFile.value
+        ? txtEditViewRef.value?.editorTextarea
+        : editViewRef.value?.editorTextarea;
+    if (!textarea || !text) return false;
+    const content = textarea.value || "";
+    const index = content.indexOf(text);
+    if (index === -1) return false;
+    textarea.focus();
+    textarea.setSelectionRange(index, index + text.length);
+    const style = window.getComputedStyle(textarea);
+    const lineH = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6 || 20;
+    const padTop = parseFloat(style.paddingTop) || 0;
+    const line = content.slice(0, index).split("\n").length - 1;
+    textarea.scrollTop = Math.max(0, line * lineH - padTop - lineH * 2);
+    return true;
+};
+
+const tryResolvePendingLocate = () => {
+    const request = pendingLocateRequest.value;
+    if (!request?.filePath || !request?.text) return;
+    if (!activeTab.value || activeTab.value.path !== request.filePath) return;
+    if (activeTabViewMode.value !== "edit") return;
+    if (focusEditorSelection(request.text)) {
+        pendingLocateRequest.value = null;
+    }
+};
+
+const handleOpenMakeLinkEvent = (event) => {
+    openMakeLink(event.detail || null);
+};
+
+const handleLocateTextEvent = async (event) => {
+    const { filePath, text } = event.detail || {};
+    if (!filePath || !text) return;
+    pendingLocateRequest.value = { filePath, text };
+    if (!activeTab.value || activeTab.value.path !== filePath) {
+        const name = filePath.split("/").filter(Boolean).pop() || filePath;
+        if (typeof openFile === "function") {
+            await openFile({ filePath, fileName: name });
+        }
+    }
+    if (activeTabViewMode.value !== "edit" && activeTab.value?.path === filePath) {
+        updateTabState(activeTab.value.id, {
+            viewMode: "edit",
+            draftContent: getTabDraftContent(activeTab.value),
+            isDirty: activeTab.value.isDirty || false,
+        });
+    }
+    nextTick(() => {
+        tryResolvePendingLocate();
+    });
 };
 
 // ---- 大纲 ----
@@ -1123,6 +1273,7 @@ const openOutline = () => {
     collapsedHeadingIndices.value = new Set();
     outlineOpen.value = true;
 };
+
 
 const scrollToHeading = (h) => {
     outlineOpen.value = false;
@@ -1643,4 +1794,3 @@ const tabItemStyle = computed(() => {
     color: #bfbfbf;
 }
 </style>
-

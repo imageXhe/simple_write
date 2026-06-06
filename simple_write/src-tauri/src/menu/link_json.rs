@@ -182,6 +182,25 @@ pub fn scan_links(warehouse_path: String) -> Result<Vec<LinkEntry>, String> {
         });
     }
 
+    // 合并 txt 隐藏链接（来自 txt-meta.json 中的 linkedFilePath）
+    let hidden_links = super::novel_json::get_txt_hidden_links(&warehouse_path)?;
+    for (source_path, hidden_targets) in &hidden_links {
+        let normalized_source = normalize_path(source_path);
+        // 查找已有条目或创建新条目
+        if let Some(existing) = entries.iter_mut().find(|e| e.source == normalized_source) {
+            for t in hidden_targets {
+                if !existing.targets.contains(t) {
+                    existing.targets.push(t.clone());
+                }
+            }
+        } else {
+            entries.push(LinkEntry {
+                source: normalized_source,
+                targets: hidden_targets.clone(),
+            });
+        }
+    }
+
     save_links(&warehouse_path, &entries)
 }
 

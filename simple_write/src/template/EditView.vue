@@ -39,10 +39,10 @@
         </div>
 
         <template #overlay>
-            <a-menu class="dropdown-menu-bordered" @click="handleMenuClick">
-                <a-menu-item key="edit-newLink" :icon="h(LinkOutlined)">{{ t("content.newLink") }}</a-menu-item>
-                <a-menu-item key="edit-newOutLinkp" :icon="h(ExportOutlined)">{{ t("content.newOutLink") }}</a-menu-item>
-                <a-menu-divider />
+                <a-menu class="dropdown-menu-bordered" @click="handleMenuClick">
+                    <a-menu-item key="edit-newLink" :icon="h(LinkOutlined)">{{ t("content.newLink") }}</a-menu-item>
+                    <a-menu-item key="edit-newOutLinkp" :icon="h(ExportOutlined)">{{ t("content.newOutLink") }}</a-menu-item>
+                    <a-menu-divider />
                 <a-sub-menu key="edit-textFormat" :icon="h(FontColorsOutlined)" :title="t('content.textFormat')">
                     <a-menu-item key="bold" :icon="h(BoldOutlined)">{{ t("content.bold") }}</a-menu-item>
                     <a-menu-item key="italic" :icon="h(ItalicOutlined)">{{ t("content.italic") }}</a-menu-item>
@@ -143,6 +143,7 @@ const props = defineProps({
     disabled: { type: Boolean, default: false },
     isDirty: { type: Boolean, default: false },
     isSaving: { type: Boolean, default: false },
+    filePath: { type: String, default: "" },
 });
 
 const emit = defineEmits(["save"]);
@@ -820,7 +821,9 @@ defineExpose({ editorTextarea });
     font-size: var(--edit-font-size, 14px);
     line-height: 1.6;
     font-family: Consolas, "SFMono-Regular", Menlo, Monaco, "Liberation Mono", monospace;
-    white-space: pre;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: break-word;
     tab-size: 4;
 }
 
@@ -855,11 +858,6 @@ defineExpose({ editorTextarea });
 </style>
 
 <style>
-/* 下拉菜单边框（dropdown 渲染在 body 层，必须全局样式） */
-.dropdown-menu-bordered {
-    border: 1px solid gray;
-}
-
 /* 段落格式菜单中的勾选标记（dropdown 渲染在 body 层，必须全局样式） */
 .paragraph-check {
     margin-left: auto;

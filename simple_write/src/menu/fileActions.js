@@ -165,3 +165,16 @@ export async function saveFileContent(filePath, content) {
     content,
   });
 }
+
+// 快速粘贴：读取剪贴板内容并追加到仓库根目录文件
+export async function quickPaste(fileName) {
+  if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) {
+    return null;
+  }
+
+  const warehousePath = await getWarehouseRootPath();
+  return invoke("quick_paste", {
+    warehousePath,
+    fileName,
+  });
+}

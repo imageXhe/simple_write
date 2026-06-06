@@ -37,6 +37,10 @@
           <li>{{ t('help.feature5') }}</li>
           <li>{{ t('help.feature6') }}</li>
           <li>{{ t('help.feature7') }}</li>
+          <li>{{ t('help.feature8') }}</li>
+          <li>{{ t('help.feature9') }}</li>
+          <li>{{ t('help.feature10') }}</li>
+          <li>{{ t('help.feature11') }}</li>
         </ul>
       </div>
 

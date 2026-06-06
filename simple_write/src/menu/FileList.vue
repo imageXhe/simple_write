@@ -2,18 +2,18 @@
 <div class="file-list-toolbar-wrap">
         <a-flex class="file-list-toolbar" justify="space-evenly" align="center">
             <a-tooltip :title="t('file.newNote')" :arrow="false" placement="bottom">
-                <a-button class="file-list-toolbar-button" @click="CreateEntry({ isFolder: false })">
+                <a-button ghost class="file-list-toolbar-button" @click="CreateEntry({ isFolder: false })">
                     <FormOutlined />
                 </a-button>
             </a-tooltip>
             <a-tooltip :title="t('file.newFolder')" :arrow="false" placement="bottom">
-                <a-button class="file-list-toolbar-button" @click="CreateEntry({ isFolder: true })">
+                <a-button ghost class="file-list-toolbar-button" @click="CreateEntry({ isFolder: true })">
                     <FolderAddOutlined />
                 </a-button>
             </a-tooltip>
             <a-tooltip :title="t('file.sort')" :arrow="false" placement="bottom">
                 <a-dropdown :trigger="['click']" placement="rightBottom">
-                    <a-button class="file-list-toolbar-button">
+                    <a-button ghost class="file-list-toolbar-button">
                         <SortDescendingOutlined />
                     </a-button>
                     <template #overlay>
@@ -31,7 +31,7 @@
                 </a-dropdown>
             </a-tooltip>
             <a-tooltip :title="expand_all ? t('file.collapseAll') : t('file.expandAll')" :arrow="false" placement="bottom">
-                <a-button class="file-list-toolbar-button" @click="ExpandAll">
+                <a-button ghost class="file-list-toolbar-button" @click="ExpandAll">
                     <ColumnHeightOutlined />
                 </a-button>
             </a-tooltip>
@@ -41,6 +41,143 @@
     <div style="overflow: auto;height: calc(100% - 51px);">
         <FilePanel />
     </div>
+
+    <!-- 批量导出 modal -->
+    <a-modal
+        v-model:open="batchExportOpen"
+        :title="t('file.batchExportTitle')"
+        :ok-text="t('file.exportShort')"
+        :cancel-text="t('file.cancel')"
+        width="560px"
+        :maskClosable="false"
+        :ok-button-props="{ disabled: !batchLocked || selectedExportFilePaths.length === 0 }"
+        @ok="handleBatchExport"
+        @cancel="batchExportOpen = false"
+    >
+        <div class="batch-export-body">
+            <!-- 文件选择列表 -->
+            <div class="batch-export-tree">
+                <div class="batch-export-tree-header">
+                    <span>{{ t('file.selectExportScope') }}</span>
+                    <span style="display:flex;gap:4px;">
+                        <a-dropdown :trigger="['click']" placement="bottomRight">
+                            <a-button size="small">{{ t('file.sort') }}</a-button>
+                            <template #overlay>
+                                <a-menu class="dropdown-menu-bordered">
+                                    <a-menu-item key="name_asc" @click="setExportSort('name_asc')">{{ t('file.nameAsc') }}</a-menu-item>
+                                    <a-menu-item key="name_desc" @click="setExportSort('name_desc')">{{ t('file.nameDesc') }}</a-menu-item>
+                                    <a-menu-divider />
+                                    <a-menu-item key="modify_time_asc" @click="setExportSort('modify_time_asc')">{{ t('file.modifyTimeAsc') }}</a-menu-item>
+                                    <a-menu-item key="modify_time_desc" @click="setExportSort('modify_time_desc')">{{ t('file.modifyTimeDesc') }}</a-menu-item>
+                                    <a-menu-divider />
+                                    <a-menu-item key="create_time_asc" @click="setExportSort('create_time_asc')">{{ t('file.createTimeAsc') }}</a-menu-item>
+                                    <a-menu-item key="create_time_desc" @click="setExportSort('create_time_desc')">{{ t('file.createTimeDesc') }}</a-menu-item>
+                                </a-menu>
+                            </template>
+                        </a-dropdown>
+                        <a-button size="small" @click="toggleExportExpandAll">
+                            {{ exportAllExpanded ? t('file.collapseAll') : t('file.expandAll') }}
+                        </a-button>
+                    </span>
+                </div>
+                <div class="batch-export-tree-scroll">
+                    <div v-if="exportableEntries.length === 0" class="batch-export-empty">{{ t('file.noTxtFiles') }}</div>
+                    <div v-for="entry in exportableEntries" :key="entry.path" class="batch-export-item"
+                        :style="{ paddingLeft: (entry.depth * 16 + 8) + 'px' }">
+                        <span
+                            v-if="entry.isFolder"
+                            class="batch-export-folder-toggle"
+                            @click.stop="toggleExportFolderExpand(entry.path)"
+                        >
+                            {{ exportExpandedFolders.has(entry.path) ? '▾' : '▸' }}
+                        </span>
+                        <span v-else class="batch-export-folder-toggle batch-export-folder-toggle--placeholder">•</span>
+                        <a-checkbox v-if="!batchLocked"
+                            :checked="entry.isFolder ? isFolderAllChecked(entry) : selectedExportPaths.has(entry.path)"
+                            :indeterminate="entry.isFolder && isFolderIndeterminate(entry)"
+                            @change="(e) => toggleExportPath(entry, e.target.checked)"
+                        >
+                            <span :style="{ color: entry.isFolder ? '#1890ff' : 'var(--text-primary, #262626)' }">
+                                {{ entry.isFolder ? '📁' : '📄' }} {{ entry.name }}
+                            </span>
+                        </a-checkbox>
+                        <span v-else style="color:var(--text-primary,#262626)">{{ entry.isFolder ? '📁' : '📄' }} {{ entry.name }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 确认锁定 -->
+            <div class="batch-export-lock">
+                <a-checkbox v-model:checked="batchLocked" @change="onLockChange" :disabled="selectedExportPaths.size === 0">
+                    <span style="color:var(--text-primary,#262626)">{{ t('file.confirmSelection') }}</span>
+                </a-checkbox>
+            </div>
+
+            <!-- 导出规则（锁定前禁用） -->
+            <div class="batch-export-rules" :class="{ 'batch-export-rules--disabled': !batchLocked }">
+                <div class="batch-export-rules-header">
+                    <span class="batch-export-rules-title">{{ t('file.exportRules') }}</span>
+                    <a-button size="small" :disabled="!batchLocked" @click="resetAllExportRules">
+                        {{ t('file.resetAllRules') }}
+                    </a-button>
+                </div>
+                <!-- 层级选择 -->
+                <div class="batch-export-rule-level" v-if="maxExportDepth > 0">
+                    <span class="batch-export-rule-label">{{ t('file.selectLevel') }}</span>
+                    <a-select
+                        v-model:value="selectedRuleLevel"
+                        size="small"
+                        style="width:120px;"
+                        :disabled="!batchLocked"
+                    >
+                        <a-select-option v-for="i in maxExportDepth" :key="i" :value="i - 1">
+                            {{ t('file.levelLabel').replace('{n}', i) }}
+                        </a-select-option>
+                    </a-select>
+                </div>
+                <!-- 文件夹规则行 -->
+                <div class="batch-export-rule-row" v-if="exportDepthRules[selectedRuleLevel]">
+                    <span>{{ t('file.folderNameLabel') }}</span>
+                    <a-input v-model:value="exportDepthRules[selectedRuleLevel].folder.prefix" size="small" style="width:50px;" :placeholder="t('file.prefix')" :disabled="!batchLocked" />
+                    <span>{{ t('file.name') }}</span>
+                    <a-input v-model:value="exportDepthRules[selectedRuleLevel].folder.suffix" size="small" style="width:50px;" :placeholder="t('file.suffix')" :disabled="!batchLocked" />
+                    <a-checkbox v-model:checked="exportDepthRules[selectedRuleLevel].folder.blank" size="small" :disabled="!batchLocked">
+                        <span style="color:var(--text-primary,#262626)">{{ t('file.blankLine') }}</span>
+                    </a-checkbox>
+                    <a-button size="small" danger :disabled="!batchLocked" @click="exportDepthRules[selectedRuleLevel].folder.skip = !exportDepthRules[selectedRuleLevel].folder.skip">
+                        {{ exportDepthRules[selectedRuleLevel].folder.skip ? t('file.restore') : t('file.skip') }}
+                    </a-button>
+                </div>
+                <!-- 文件规则行 -->
+                <div class="batch-export-rule-row" v-if="exportDepthRules[selectedRuleLevel]">
+                    <span>{{ t('file.fileNameLabel') }}</span>
+                    <a-input v-model:value="exportDepthRules[selectedRuleLevel].file.prefix" size="small" style="width:50px;" :placeholder="t('file.prefix')" :disabled="!batchLocked" />
+                    <span>{{ t('file.name') }}</span>
+                    <a-input v-model:value="exportDepthRules[selectedRuleLevel].file.suffix" size="small" style="width:50px;" :placeholder="t('file.suffix')" :disabled="!batchLocked" />
+                    <a-checkbox v-model:checked="exportDepthRules[selectedRuleLevel].file.blank" size="small" :disabled="!batchLocked">
+                        <span style="color:var(--text-primary,#262626)">{{ t('file.blankLine') }}</span>
+                    </a-checkbox>
+                    <a-button size="small" danger :disabled="!batchLocked" @click="exportDepthRules[selectedRuleLevel].file.skip = !exportDepthRules[selectedRuleLevel].file.skip">
+                        {{ exportDepthRules[selectedRuleLevel].file.skip ? t('file.restore') : t('file.skip') }}
+                    </a-button>
+                </div>
+            </div>
+
+            <!-- 输出设置 -->
+            <div class="batch-export-options">
+                <div class="batch-export-option">
+                    <span>{{ t('file.outputFileName') }}</span>
+                    <a-input v-model:value="exportOutputName" :placeholder="t('file.defaultOutputName')" style="width:180px;" />
+                </div>
+                <div class="batch-export-option">
+                    <span>{{ t('file.outputDirLabel') }}</span>
+                    <a-input v-model:value="exportOutputDir" :placeholder="t('file.pleaseSelectDirectory')" disabled style="width:180px;" />
+                    <a-button size="small" @click="selectExportOutputDir">{{ t('file.select') }}</a-button>
+                </div>
+                <div v-if="exportDuplicateHint" class="batch-export-hint">{{ t('file.exportDuplicateHint') }}</div>
+            </div>
+        </div>
+    </a-modal>
 
     <!-- 改名 移动 modal -->
     <a-modal
@@ -85,6 +222,7 @@ import {
     FolderAddOutlined,
     SortDescendingOutlined,
     ColumnHeightOutlined,
+    DeliveredProcedureOutlined,
 } from "@ant-design/icons-vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import FilePanel from "./FilePanel.vue";
@@ -98,7 +236,9 @@ import {
     deleteFileEntry as invokeDeleteFileEntry,
 } from "./fileActions";
 import { useI18n } from "../locales";
-import { fileData as sharedFileData, warehousePath as sharedWarehousePath } from "../stores/fileStore";
+import { fileData as sharedFileData, warehousePath as sharedWarehousePath, flattenTree } from "../stores/fileStore";
+import { saveFileContent } from "./fileActions";
+import { invoke } from "@tauri-apps/api/core";
 
 const { t } = useI18n();
 const replaceTabPathPrefix = inject("replaceTabPathPrefix", () => {});
@@ -596,6 +736,387 @@ const handleFileContextAction = async ({ action, item }) => {
 
 provide("handleFileContextAction", handleFileContextAction);
 
+// ---- 批量导出 ----
+const batchExportOpen = ref(false);
+const batchLocked = ref(false);
+const selectedExportPaths = ref(new Set());
+const exportOutputName = ref(t('file.defaultOutputName'));
+const exportOutputDir = ref("");
+const exportSortKey = ref("name_asc");
+const exportExpandedFolders = ref(new Set());
+const exportAllExpanded = ref(true);
+
+// 导出规则 — 每层级各自存储文件夹和文件两套规则
+const exportDepthRules = ref([]);
+// [{ folder: {prefix, suffix, blank, skip}, file: {prefix, suffix, blank, skip} }]
+const selectedRuleLevel = ref(0);
+
+// 最大路径深度（文件夹数+文件名 = parts.length）
+const maxExportDepth = computed(() => {
+    if (!batchLocked.value) return 0;
+    const paths = selectedExportFilePaths.value;
+    if (paths.length === 0) return 0;
+    const wh = (warehouse_path.value || "").replace(/\\/g, "/").replace(/\/+$/, "");
+    let max = 0;
+    for (const p of paths) {
+        const rel = p.startsWith(wh) ? p.slice(wh.length).replace(/^\//, "") : p;
+        max = Math.max(max, rel.split("/").length);
+    }
+    return max;
+});
+
+const makeDefaultRule = () => ({ prefix: "", suffix: "", blank: true, skip: false });
+
+const initExportRules = () => {
+    const depth = maxExportDepth.value;
+    const old = exportDepthRules.value;
+    const rules = [];
+    for (let i = 0; i < depth; i++) {
+        rules.push({
+            folder: { ...makeDefaultRule(), ...old[i]?.folder },
+            file: { ...makeDefaultRule(), ...old[i]?.file },
+        });
+    }
+    exportDepthRules.value = rules;
+    if (selectedRuleLevel.value >= depth) {
+        selectedRuleLevel.value = Math.max(0, depth - 1);
+    }
+};
+
+const resetAllExportRules = () => {
+    for (const rule of exportDepthRules.value) {
+        Object.assign(rule.folder, makeDefaultRule());
+        Object.assign(rule.file, makeDefaultRule());
+    }
+};
+
+const exportDuplicateHint = computed(() => {
+    if (!exportOutputDir.value || !exportOutputName.value) return false;
+    const dir = exportOutputDir.value.replace(/\\/g, "/").replace(/\/+$/, "");
+    const targetPath = dir + "/" + exportOutputName.value + ".txt";
+    return exportableEntries.value.some(e => e.path.replace(/\\/g, "/") === targetPath);
+});
+
+const compareExportNodes = (a, b) => {
+    const sortValue = exportSortKey.value;
+    if (sortValue === "name_asc") {
+        return a.info.name.localeCompare(b.info.name, 'zh-CN');
+    }
+    if (sortValue === "name_desc") {
+        return b.info.name.localeCompare(a.info.name, 'zh-CN');
+    }
+    if (sortValue === "modify_time_asc") {
+        return a.info.modify_time.localeCompare(b.info.modify_time);
+    }
+    if (sortValue === "modify_time_desc") {
+        return b.info.modify_time.localeCompare(a.info.modify_time);
+    }
+    if (sortValue === "create_time_asc") {
+        return a.info.create_time.localeCompare(b.info.create_time);
+    }
+    if (sortValue === "create_time_desc") {
+        return b.info.create_time.localeCompare(a.info.create_time);
+    }
+    return 0;
+};
+
+const sortExportNodes = (nodes) => {
+    return [...(nodes || [])].sort((a, b) => {
+        if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1;
+        return compareExportNodes(a, b);
+    });
+};
+
+const buildExportPathFromKey = (key = []) => {
+    return [warehouse_path.value || "", ...(Array.isArray(key) ? key : [])]
+        .filter(Boolean)
+        .join("/")
+        .replace(/\\/g, "/");
+};
+
+const folderHasTxtDescendants = (node) => {
+    if (!node?.is_folder) {
+        return /\.txt$/i.test(node?.info?.name || "");
+    }
+    return (node.children || []).some((child) => folderHasTxtDescendants(child));
+};
+
+const collectFolderSelectionPaths = (node, paths = []) => {
+    const path = buildExportPathFromKey(node?.key || []);
+    if (path) paths.push(path);
+    for (const child of node?.children || []) {
+        if (child?.is_folder) {
+            collectFolderSelectionPaths(child, paths);
+        } else if (/\.txt$/i.test(child?.info?.name || "")) {
+            paths.push(buildExportPathFromKey(child.key || []));
+        }
+    }
+    return paths;
+};
+
+const hasSelectedDescendant = (folderPath) => {
+    for (const path of selectedExportPaths.value) {
+        if (path === folderPath || path.startsWith(folderPath + "/")) return true;
+    }
+    return false;
+};
+
+const flattenExportTree = (nodes, depth = 0) => {
+    const result = [];
+    for (const node of sortExportNodes(nodes)) {
+        const path = buildExportPathFromKey(node.key || []);
+        const entry = {
+            name: node.info.name,
+            path,
+            isFolder: node.is_folder,
+            depth,
+            key: node.key || [],
+            children: node.children || [],
+        };
+
+        if (entry.isFolder) {
+            const includeWhenUnlocked = true;
+            const includeWhenLocked = hasSelectedDescendant(path);
+            if ((!batchLocked.value && includeWhenUnlocked) || (batchLocked.value && includeWhenLocked)) {
+                result.push(entry);
+            }
+            if (exportExpandedFolders.value.has(path)) {
+                result.push(...flattenExportTree(node.children || [], depth + 1));
+            }
+            continue;
+        }
+
+        if (!/\.txt$/i.test(entry.name)) {
+            continue;
+        }
+
+        if (!batchLocked.value || selectedExportPaths.value.has(path)) {
+            result.push(entry);
+        }
+    }
+    return result;
+};
+
+const exportableEntries = computed(() => flattenExportTree(file_data.value, 0));
+
+const selectedExportFilePaths = computed(() => {
+    const orderedFiles = [];
+    const walk = (nodes) => {
+        for (const node of sortExportNodes(nodes)) {
+            const path = buildExportPathFromKey(node.key || []);
+            if (node.is_folder) {
+                walk(node.children || []);
+            } else if (/\.txt$/i.test(node.info?.name || "") && selectedExportPaths.value.has(path)) {
+                orderedFiles.push(path);
+            }
+        }
+    };
+    walk(file_data.value || []);
+    return orderedFiles;
+});
+
+const getFolderTxtChildren = (folderPath) => {
+    const result = [];
+    const walk = (nodes) => {
+        for (const node of nodes || []) {
+            const path = buildExportPathFromKey(node.key || []);
+            if (node.is_folder) {
+                if (path === folderPath || path.startsWith(folderPath + "/")) {
+                    walk(node.children || []);
+                }
+            } else if (/\.txt$/i.test(node.info?.name || "") && path.startsWith(folderPath + "/")) {
+                result.push({ path });
+            }
+        }
+    };
+    walk(file_data.value || []);
+    return result;
+};
+
+const isFolderAllChecked = (folderEntry) => {
+    if (!folderEntry.isFolder) return false;
+    const children = getFolderTxtChildren(folderEntry.path);
+    if (children.length === 0) return selectedExportPaths.value.has(folderEntry.path);
+    return selectedExportPaths.value.has(folderEntry.path) && children.every((e) => selectedExportPaths.value.has(e.path));
+};
+
+const isFolderIndeterminate = (folderEntry) => {
+    if (!folderEntry.isFolder) return false;
+    const children = getFolderTxtChildren(folderEntry.path);
+    if (children.length === 0) return false;
+    const checkedCount = children.filter((e) => selectedExportPaths.value.has(e.path)).length;
+    return checkedCount > 0 && (checkedCount < children.length || !selectedExportPaths.value.has(folderEntry.path));
+};
+
+const toggleExportPath = (entry, checked) => {
+    const newSet = new Set(selectedExportPaths.value);
+    if (entry.isFolder) {
+        for (const path of collectFolderSelectionPaths({
+            key: entry.key,
+            children: entry.children,
+            is_folder: true,
+        })) {
+            if (checked) newSet.add(path);
+            else newSet.delete(path);
+        }
+    } else if (entry.path.endsWith(".txt")) {
+        if (checked) newSet.add(entry.path);
+        else newSet.delete(entry.path);
+    }
+    selectedExportPaths.value = newSet;
+};
+
+const setExportSort = (value) => {
+    exportSortKey.value = value;
+};
+
+const collectAllFolderPaths = (nodes, acc = []) => {
+    for (const node of nodes || []) {
+        if (!node?.is_folder) continue;
+        const path = buildExportPathFromKey(node.key || []);
+        if (path) acc.push(path);
+        collectAllFolderPaths(node.children || [], acc);
+    }
+    return acc;
+};
+
+const toggleExportFolderExpand = (folderPath) => {
+    const next = new Set(exportExpandedFolders.value);
+    if (next.has(folderPath)) next.delete(folderPath);
+    else next.add(folderPath);
+    exportExpandedFolders.value = next;
+    exportAllExpanded.value = collectAllFolderPaths(file_data.value || []).every((path) => next.has(path));
+};
+
+const toggleExportExpandAll = () => {
+    if (exportAllExpanded.value) {
+        exportExpandedFolders.value = new Set();
+        exportAllExpanded.value = false;
+    } else {
+        exportExpandedFolders.value = new Set(collectAllFolderPaths(file_data.value || []));
+        exportAllExpanded.value = true;
+    }
+};
+
+const onLockChange = () => {
+    // 锁定由 checkbox v-model 控制，锁定后只能查看已选文件
+    if (batchLocked.value && selectedExportPaths.value.size === 0) {
+        message.warning(t('file.pleaseSelectFiles'));
+        batchLocked.value = false;
+        return;
+    }
+    if (batchLocked.value) {
+        initExportRules();
+    }
+};
+
+const selectExportOutputDir = async () => {
+    const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+    const selected = await openDialog({ multiple: false, directory: true, defaultPath: warehouse_path.value || undefined });
+    if (typeof selected === "string" && selected.trim()) {
+        const sel = selected.replace(/\\/g, "/");
+        const wh = (warehouse_path.value || "").replace(/\\/g, "/");
+        if (!sel.startsWith(wh)) { message.warning(t('file.outputDirMustInWarehouse')); return; }
+        exportOutputDir.value = selected;
+    }
+};
+
+const openBatchExportModal = () => {
+    exportOutputDir.value = warehouse_path.value || "";
+    selectedExportPaths.value = new Set();
+    exportOutputName.value = t('file.defaultOutputName');
+    batchLocked.value = false;
+    exportSortKey.value = "name_asc";
+    exportExpandedFolders.value = new Set(collectAllFolderPaths(file_data.value || []));
+    exportAllExpanded.value = true;
+    exportDepthRules.value = [];
+    selectedRuleLevel.value = 0;
+    batchExportOpen.value = true;
+};
+
+// 监听来自 App.vue 侧边栏按钮的事件
+onMounted(() => {
+    window.addEventListener("simple-write:open-batch-export", openBatchExportModal);
+});
+onBeforeUnmount(() => {
+    window.removeEventListener("simple-write:open-batch-export", openBatchExportModal);
+});
+
+const handleBatchExport = async () => {
+    const paths = [...selectedExportFilePaths.value];
+    if (paths.length === 0) { message.warning(t('file.pleaseSelectFiles')); return; }
+    if (!exportOutputDir.value.trim()) { message.warning(t('file.pleaseSelectOutputDir')); return; }
+    if (exportDuplicateHint.value) { message.warning(t('file.exportDuplicateHintFull')); return; }
+
+    const dir = exportOutputDir.value.replace(/\\/g, "/").replace(/\/+$/, "");
+    const outputPath = dir + "/" + exportOutputName.value;
+
+    try {
+        // 手动拼接导出（支持自定义命名规则）
+        const allTxt = paths.map((path) => ({
+            path,
+            isFolder: false,
+        }));
+        let output = "";
+        let previousFolderParts = [];
+
+        for (let i = 0; i < allTxt.length; i++) {
+            const f = allTxt[i];
+            let content = "";
+            try { content = await invoke("get_file_content", { filePath: f.path }); } catch {}
+
+            // 获取相对路径段
+            const wh = (warehouse_path.value || "").replace(/\\/g, "/").replace(/\/+$/, "");
+            const rel = f.path.replace(/\\/g, "/");
+            let relPath = rel.startsWith(wh) ? rel.slice(wh.length).replace(/^\//, "") : rel;
+            const parts = relPath.split("/");
+
+            // 文件夹名作为卷名（跳过文件名自身的部分）
+            const folderParts = parts.slice(0, -1);
+            let commonDepth = 0;
+            while (
+                commonDepth < previousFolderParts.length &&
+                commonDepth < folderParts.length &&
+                previousFolderParts[commonDepth] === folderParts[commonDepth]
+            ) {
+                commonDepth++;
+            }
+            for (let d = commonDepth; d < folderParts.length; d++) {
+                const rule = exportDepthRules.value[d]?.folder || {};
+                if (!rule.skip) {
+                    const prefix = rule.prefix || "";
+                    const suffix = rule.suffix || "";
+                    if (output) output += "\n";
+                    output += `# ${prefix}${folderParts[d]}${suffix}\n`;
+                    if (rule.blank !== false) output += "\n";
+                }
+            }
+            previousFolderParts = folderParts;
+
+            // 文件名作为章节名（使用该文件所在深度的 file 规则）
+            const fileDepth = parts.length - 1;
+            const curFileRule = exportDepthRules.value[fileDepth]?.file || {};
+            if (!curFileRule.skip) {
+                const fileName = parts[parts.length - 1].replace(/\.txt$/i, "");
+                const prefix = curFileRule.prefix || "";
+                const suffix = curFileRule.suffix || "";
+                if (curFileRule.blank !== false && output) output += "\n";
+                output += `## ${prefix}${fileName}${suffix}\n\n`;
+            }
+
+            output += content.trim();
+            if (i < allTxt.length - 1) output += "\n\n";
+        }
+
+        await saveFileContent(outputPath + ".txt", output);
+        window.dispatchEvent(new CustomEvent('simple-write:file-updated', { detail: { path: outputPath + ".txt" } }));
+        message.success(t('file.exportSuccess'));
+        batchExportOpen.value = false;
+    } catch (e) {
+        message.error(e?.message || t('file.exportFailed'));
+    }
+};
+
 const sort_all = ref("");
 provide("sort_all", sort_all);
 
@@ -630,5 +1151,72 @@ const ExpandAll = () => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+}
+
+/* 批量导出 */
+.batch-export-body { display: flex; flex-direction: column; gap: 14px; }
+
+.batch-export-tree { border: 1px solid var(--border-color, #e8e8e8); border-radius: 8px; overflow: hidden; }
+
+.batch-export-tree-header {
+    padding: 6px 12px; font-size: 13px; color: var(--text-secondary, #595959);
+    border-bottom: 1px solid var(--border-secondary, #f0f0f0);
+    background: var(--bg-secondary, #fafafa);
+    display: flex; justify-content: space-between; align-items: center;
+}
+
+.batch-export-tree-scroll { max-height: 220px; overflow: auto; }
+
+.batch-export-item { padding: 3px 8px; border-bottom: 1px solid var(--border-secondary, #f0f0f0); }
+.batch-export-item:last-child { border-bottom: none; }
+.batch-export-folder-toggle {
+    display: inline-flex;
+    width: 16px;
+    margin-right: 4px;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary, #8c8c8c);
+    cursor: pointer;
+    user-select: none;
+}
+.batch-export-folder-toggle--placeholder {
+    cursor: default;
+}
+
+.batch-export-empty { padding: 24px; text-align: center; color: #bfbfbf; font-size: 13px; }
+
+.batch-export-lock { padding: 0 4px; }
+
+.batch-export-rules {
+    border: 1px solid var(--border-color, #e8e8e8); border-radius: 8px;
+    padding: 8px 12px;
+}
+.batch-export-rules-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+}
+.batch-export-rules-title { font-size: 13px; font-weight: 600; color: var(--text-primary, #262626); }
+.batch-export-rules--disabled { opacity: 0.5; pointer-events: none; }
+
+.batch-export-rule-level {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    font-size: 13px; color: var(--text-primary, #262626);
+}
+.batch-export-rule-label { white-space: nowrap; }
+
+.batch-export-rule-row {
+    display: flex; align-items: center; gap: 6px; font-size: 13px;
+    color: var(--text-primary, #262626); margin-bottom: 6px;
+}
+.batch-export-rule-row:last-child { margin-bottom: 0; }
+
+.batch-export-options { display: flex; flex-direction: column; gap: 10px; }
+
+.batch-export-option {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--text-primary, #262626);
+}
+
+.batch-export-hint {
+    font-size: 12px; color: #faad14; padding-left: 4px;
 }
 </style>
