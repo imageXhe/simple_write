@@ -2,7 +2,7 @@
 
 [English](#english) | [中文](#中文)
 
-<img width="1252" height="914" alt="image" src="https://github.com/user-attachments/assets/2914e012-6e1d-4daf-bfd4-b9b1ac21e3b8" />
+<img width="1252" height="914" alt="image" src="https://github.com/user-attachments/assets/a53f032b-d248-43d2-a771-94b34982e50e" />
 
 
 ---
